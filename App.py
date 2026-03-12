@@ -4,27 +4,33 @@ import re
 
 st.title("Student Dataset Search Engine")
 
-df = pd.read_csv("GPT DATA COLLECTION(Sheet1).csv", encoding="latin1")
+# Load dataset
+df = pd.read_csv("clean_student_dataset.csv(1)")
 
+# Search box
 query = st.text_input("Search student dataset")
 
 if query:
 
-    # Extract number (for roll number search)
+    query = query.lower()
+
+    # Extract numbers (for roll number search)
     numbers = re.findall(r'\d+', query)
-    search_term = numbers[0] if numbers else query
 
-    # Search across ALL columns
-    mask = df.apply(
-        lambda row: row.astype(str).str.lower().str.contains(search_term.lower()).any(),
-        axis=1
-    )
+    if numbers:
+        roll = numbers[0]
+        result = df[df["Student ID"].astype(str).str.contains(roll)]
 
-    result = df[mask]
+    else:
+        # Search across all columns
+        mask = df.apply(
+            lambda row: row.astype(str).str.lower().str.contains(query).any(),
+            axis=1
+        )
+        result = df[mask]
 
     if result.empty:
         st.write("No matching students found")
-
     else:
-        st.subheader("Matching Students")
+        st.write("Matching Students")
         st.dataframe(result)
