@@ -5,7 +5,7 @@ import re
 st.title("Student Dataset Search Engine")
 
 # Load dataset
-df = pd.read_csv("clean_student_dataset.csv(1)")
+df = pd.read_csv("clean_student_dataset (1).csv")
 
 # Search box
 query = st.text_input("Search student dataset")
