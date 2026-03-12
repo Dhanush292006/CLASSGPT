@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 
+# Page title
 st.title("Student Dataset Search Engine")
 
 # Load dataset
@@ -12,25 +13,38 @@ query = st.text_input("Search student dataset")
 
 if query:
 
-    query = query.lower()
+    q = query.lower()
 
-    # Extract numbers (for roll number search)
-    numbers = re.findall(r'\d+', query)
+    # Case 1: Students with no internship experience
+    if "internship" in q and ("no" in q or "none" in q):
 
-    if numbers:
-        roll = numbers[0]
-        result = df[df["Student ID"].astype(str).str.contains(roll)]
+        result = df[
+            df["Internship Experience"]
+            .astype(str)
+            .str.lower()
+            .isin(["none", "no", "nil", "nan", ""])
+        ]
 
     else:
-        # Search across all columns
-        mask = df.apply(
-            lambda row: row.astype(str).str.lower().str.contains(query).any(),
-            axis=1
-        )
-        result = df[mask]
 
+        # Detect roll number
+        numbers = re.findall(r'\d+', q)
+
+        if numbers:
+            roll = numbers[0]
+            result = df[df["Student ID"].astype(str).str.contains(roll)]
+
+        else:
+            # General keyword search
+            mask = df.apply(
+                lambda row: row.astype(str).str.lower().str.contains(q).any(),
+                axis=1
+            )
+            result = df[mask]
+
+    # Show results
     if result.empty:
-        st.write("No matching students found")
+        st.warning("No matching students found")
     else:
-        st.write("Matching Students")
-        st.dataframe(result)
+        st.success(f"{len(result)} student(s) found")
+        st.dataframe(result, use_container_width=True)
