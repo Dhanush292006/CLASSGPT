@@ -1,91 +1,39 @@
 import streamlit as st
 import pandas as pd
-import os
+import openai
 
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
-from langchain.schema import Document
-from langchain.chains import RetrievalQA
+st.set_page_config(page_title="ChatGPT Clone", layout="wide")
 
+st.title("🤖 AI Chat Assistant")
 
-st.set_page_config(page_title="ChatGPT File Assistant")
-
-st.title("🤖 ChatGPT File Assistant")
-
-# API key
+# API Key
 api_key = st.text_input("Enter OpenAI API Key", type="password")
 
 if api_key:
-    os.environ["OPENAI_API_KEY"] = api_key
+    openai.api_key = api_key
 
-# Upload files
-uploaded_files = st.file_uploader(
-    "Upload CSV / PDF / TXT",
-    type=["csv", "pdf", "txt"],
-    accept_multiple_files=True
-)
-
-documents = []
-
-if uploaded_files:
-
-    for file in uploaded_files:
-
-        if file.name.endswith(".csv"):
-
-            df = pd.read_csv(file)
-            documents.append(Document(page_content=df.to_string()))
-
-        elif file.name.endswith(".txt"):
-
-            text = file.read().decode()
-            documents.append(Document(page_content=text))
-
-        elif file.name.endswith(".pdf"):
-
-            with open(file.name, "wb") as f:
-                f.write(file.getbuffer())
-
-            loader = PyPDFLoader(file.name)
-            documents.extend(loader.load())
-
-
-# Create vector DB
-if documents and api_key:
-
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
-    )
-
-    docs = splitter.split_documents(documents)
-
-    embeddings = OpenAIEmbeddings()
-
-    vectorstore = FAISS.from_documents(docs, embeddings)
-
-    retriever = vectorstore.as_retriever()
-
-    llm = ChatOpenAI(model="gpt-4o-mini")
-
-    qa = RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
-
-
-# Chat history
+# Chat memory
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Sidebar file upload
+st.sidebar.title("Upload Data")
+uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+
+data = None
+
+if uploaded_file:
+    data = pd.read_csv(uploaded_file)
+    st.sidebar.write("Dataset Preview")
+    st.sidebar.dataframe(data.head())
 
 # Display chat history
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
 # Chat input
-prompt = st.chat_input("Ask something...")
+prompt = st.chat_input("Ask anything...")
 
 if prompt:
 
@@ -94,20 +42,35 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    if documents:
+    # If CSV uploaded → answer from dataset
+    if data is not None:
 
-        try:
-            response = qa.run(prompt)
-        except:
-            response = llm.invoke(prompt).content
+        dataset_text = data.to_string()
+
+        system_prompt = f"""
+        You are a data assistant.
+        Answer the question using this dataset if possible.
+
+        Dataset:
+        {dataset_text}
+        """
 
     else:
-        response = llm.invoke(prompt).content
+        system_prompt = "You are a helpful AI assistant."
 
+    response = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+    )
+
+    reply = response.choices[0].message.content
 
     with st.chat_message("assistant"):
-        st.markdown(response)
+        st.markdown(reply)
 
     st.session_state.messages.append(
-        {"role": "assistant", "content": response}
+        {"role": "assistant", "content": reply}
     )
