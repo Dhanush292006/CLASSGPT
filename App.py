@@ -1,50 +1,99 @@
 import streamlit as st
 import pandas as pd
-import re
+import os
 
-# Page title
-st.title("Student Dataset Search Engine")
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
+from langchain.schema import Document
+from langchain.chains import RetrievalQA
 
-# Load dataset
-df = pd.read_csv("clean_student_dataset (1).csv")
+st.title("📂 LLM File Chatbot")
 
-# Search box
-query = st.text_input("Search student dataset")
+st.write("Upload CSV, PDF or TXT files and ask questions")
 
-if query:
+# API Key
+api_key = st.text_input("Enter OpenAI API Key", type="password")
 
-    q = query.lower()
+if api_key:
+    os.environ["OPENAI_API_KEY"] = api_key
 
-    # Case 1: Students with no internship experience
-    if "internship" in q and ("no" in q or "none" in q):
 
-        result = df[
-            df["Internship Experience"]
-            .astype(str)
-            .str.lower()
-            .isin(["none", "no", "nil", "nan", ""])
-        ]
+# File uploader
+uploaded_files = st.file_uploader(
+    "Upload files",
+    type=["csv", "pdf", "txt"],
+    accept_multiple_files=True
+)
 
-    else:
 
-        # Detect roll number
-        numbers = re.findall(r'\d+', q)
+if uploaded_files and api_key:
 
-        if numbers:
-            roll = numbers[0]
-            result = df[df["Student ID"].astype(str).str.contains(roll)]
+    documents = []
 
-        else:
-            # General keyword search
-            mask = df.apply(
-                lambda row: row.astype(str).str.lower().str.contains(q).any(),
-                axis=1
-            )
-            result = df[mask]
+    for file in uploaded_files:
 
-    # Show results
-    if result.empty:
-        st.warning("No matching students found")
-    else:
-        st.success(f"{len(result)} student(s) found")
-        st.dataframe(result, use_container_width=True)
+        if file.name.endswith(".csv"):
+
+            df = pd.read_csv(file)
+            text = df.to_string()
+            documents.append(Document(page_content=text))
+
+
+        elif file.name.endswith(".txt"):
+
+            with open(file.name, "wb") as f:
+                f.write(file.getbuffer())
+
+            loader = TextLoader(file.name)
+            documents.extend(loader.load())
+
+
+        elif file.name.endswith(".pdf"):
+
+            with open(file.name, "wb") as f:
+                f.write(file.getbuffer())
+
+            loader = PyPDFLoader(file.name)
+            documents.extend(loader.load())
+
+
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200
+    )
+
+    docs = text_splitter.split_documents(documents)
+
+    embeddings = OpenAIEmbeddings()
+
+    vectorstore = FAISS.from_documents(docs, embeddings)
+
+    retriever = vectorstore.as_retriever()
+
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0
+    )
+
+    qa = RetrievalQA.from_chain_type(
+        llm=llm,
+        retriever=retriever
+    )
+
+    question = st.text_input("Ask a question")
+
+    if question:
+
+        try:
+
+            answer = qa.run(question)
+
+            st.success(answer)
+
+        except:
+
+            response = llm.invoke(question)
+
+            st.success(response.content)
